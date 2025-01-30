@@ -1,0 +1,11 @@
+[Unit]
+Description=renew clash config via subscribe url twice daily
+After=clash-meta.service
+
+[Timer]
+OnCalendar=*-*-* 08/12:00:00
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

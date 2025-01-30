@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+exec 6< <(
+	exec stdbuf -oL -eL acpi_listen | sed -une /jack/p
+)
+while :; do
+	read -t 1 -u 6 foo target foo &&
+		case $target in
+		HEADPHONE) bash $HOME/.local/share/scripts/bar/change-speaker-volume ;;
+		MICROPHONE) bash $HOME/.local/share/scripts/bar/change-mic-volume ;;
+		esac
+done

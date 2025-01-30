@@ -1,0 +1,15 @@
+#! /bin/bash
+EWW="eww -c $HOME/.config/eww/topbar"
+mic=$(pamixer --list-sources | stdbuf -o0 awk -F' ' '/input/{print $1}')
+if [[ "$1" = "-i" ]]; then
+	pamixer --source "$mic" -i "$2"
+elif [[ "$1" = "-d" ]]; then
+	pamixer --source "$mic" -d "$2"
+elif [[ "$1" = "-t" ]]; then
+	pamixer --source "$mic" -t
+elif [[ "$1" = "-s" ]]; then
+	pamixer --source "$mic" --set-volume "$2"
+fi
+${EWW} update mic_volume="$(bash ~/.local/share/scripts/system/get-mic-info --volume)"
+${EWW} update mic_icon="$(bash ~/.local/share/scripts/system/get-mic-info --icon)"
+${EWW} update mic_status="$(bash ~/.local/share/scripts/system/get-mic-info --status)"

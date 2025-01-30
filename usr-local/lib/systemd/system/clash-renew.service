@@ -1,0 +1,8 @@
+[Unit]
+Description=renew clash config via subscribe url
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=clash-renew
+PrivateTmp=true

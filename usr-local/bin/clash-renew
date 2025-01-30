@@ -1,0 +1,136 @@
+#!/bin/bash
+
+# 本脚本主要使用常用文本处理工具（grep, awk，sed等），绝大部分发行版均内置
+# 本脚本仅支持使用systemd作为init程序（使用systemctl管理），其他init请自行修改
+# 正常情况下只需修改开头的服务名称与文件路径即可
+# 实现规则订阅、添加用户配置、简易的mixin（仅支持添加，不支持替换）
+
+# service name and file path
+clash_service_name="clash-meta.service"
+clash_config_file="/etc/clash-meta/config.yaml"
+suburl_file="/etc/clash-meta/user-config/suburl"
+user_config_file="/etc/clash-meta/user-config/user-config.yaml"
+proxies_mixin_file="/etc/clash-meta/user-config/mixin/proxies.yaml"
+proxy_groups_file="/etc/clash-meta/user-config/mixin/proxy-groups.yaml"
+rules_mixin_file="/etc/clash-meta/user-config/mixin/rules.yaml"
+
+get_space_num() {
+    # prams
+    text=$1
+    # count the space
+    num=0
+    while [[ ${text:$num:1} == " " ]]; do
+        num=$((num+1))
+    done
+    echo $num
+}
+
+mixin() {
+    # prams
+    original_file=$1
+    mixin_file=$2
+    start_str=$3
+    # mktemp
+    mixin_temp=$(mktemp)
+    # delete mixin file empty line
+    awk NF "$mixin_file" > "$mixin_temp"
+    # get start line and space num
+    original_start_line=$(grep "$start_str" "$original_file" -n -m 1 \
+        | awk -F: '{ print $1 }')
+    original_space_num=$(get_space_num \
+        "$(awk "NR==$((original_start_line + 1)){print}" "$original_file")")
+    mixin_start_line=$(grep "$start_str" "$mixin_temp" -n -m 1 \
+        | awk -F: '{ print $1 }')
+    mixin_space_num=$(get_space_num \
+        "$(awk "NR==$((mixin_start_line + 1)){print}" "$mixin_temp")")
+    space_num=$(( original_space_num - mixin_space_num ))
+    # make the space num of mixin file equal to the original file
+    mixin_text=$(cat "$mixin_temp")
+    if [[ $space_num -gt 0 ]]; then
+        i=0
+        if [[ $mixin_space_num == 0 ]]; then
+            mixin_text=$(echo "$mixin_text" | sed -e 's/\s/  /')
+            mixin_text=$(echo "$mixin_text" | sed -e 's/-  / - /')
+            i=1
+        fi
+        while [[ $i -lt $space_num ]]; do
+            mixin_text=$(echo "$mixin_text" | sed -e 's/\s/  /')
+            i=$(( i + 1 ))
+        done
+    elif [[ $space_num -lt 0 ]]; then
+        i=0
+        while [[ $i -gt $space_num ]]; do
+            mixin_text=$(echo "$mixin_text" | sed -e 's/\s//')
+            i=$(( i - 1 ))
+        done
+    fi
+    # mixin
+    echo "$mixin_text" | \
+        awk -v start="$mixin_start_line" '{if (NR>start) print $0}' \
+        > "$mixin_temp"
+    sed -i "$original_start_line r $mixin_temp" "$original_file"
+    # rmtemp
+    rm "$mixin_temp"
+}
+
+# check root
+if [ "$(whoami)" != "root"  ]
+then
+    echo "订阅更新失败, 请使用root用户运行。"
+    exit 1
+fi
+
+# check necessary files
+if [ ! -f "$suburl_file" ]; then
+    echo "订阅更新失败, 请检查订阅链接文件是否存在。"
+    exit 2
+fi
+if [ ! -f "$user_config_file" ]; then
+    echo "订阅更新失败, 请检查用户配置文件是否存在。"
+    exit 2
+fi
+
+# get subscribe config
+temp=$(mktemp)
+suburl=$(cat "$suburl_file")
+curl -s "$suburl" > "$temp"
+if [ -z "$(< "$temp" grep proxies:)" ]
+then
+    echo "订阅更新失败, 请检查网络环境。"
+    rm "$temp"
+    exit 3
+fi
+
+# mixin
+if [ -f "$proxies_mixin_file" ]; then
+    echo "检测到用户proxies, 进行mixin......"
+    mixin "$temp" $proxies_mixin_file "proxies:"
+else
+    echo "未检测到用户proxies, 跳过mixin"
+fi
+if [ -f "$proxy_groups_file" ]; then
+    echo "检测到用户proxy-groups, 进行mixin......"
+    mixin "$temp" $proxy_groups_file "proxy-groups:"
+  else
+    echo "未检测到用户proxy-groups, 跳过mixin"
+fi
+if [ -f "$rules_mixin_file" ]; then
+    echo "检测到用户rules, 进行mixin......"
+    mixin "$temp" $rules_mixin_file "rules:"
+  else
+    echo "未检测到用户rules, 跳过mixin"
+fi
+
+# add user config
+user_temp=$(mktemp)
+awk NF "$user_config_file" > "$user_temp"  # delete user config empty line
+proxies_line=$(grep proxies: "$temp" -n -m 1 | awk -F: '{ print $1 }')
+sed -i "1,$(( proxies_line - 1 )) d" "$temp"
+sed -i "0 r $user_temp" "$temp"
+rm "$user_temp"
+
+# restart service
+cp -rf "$temp" "$clash_config_file"
+systemctl restart "$clash_service_name"
+echo "订阅更新成功。"
+rm "$temp"

@@ -1,0 +1,9 @@
+#! /bin/bash
+EWW="eww -c $HOME/.config/eww/topbar"
+mic_enable=$(${EWW} get mic_enable)
+
+if [ "$mic_enable" == true ] ; then
+    bash ~/.local/share/scripts/bar/change-mic-volume "$@"
+else
+    bash ~/.local/share/scripts/bar/change-speaker-volume "$@"
+fi
